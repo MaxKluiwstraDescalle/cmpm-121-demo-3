@@ -28,7 +28,7 @@ leaflet
   .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution:
-      '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      '&copy; <a hnvref="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   })
   .addTo(map);
 
@@ -37,12 +37,12 @@ playerMarker.bindTooltip("That's you!");
 playerMarker.addTo(map);
 
 let playerPoints = 0;
-const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
-statusPanel.innerHTML = "No points yet...";
+const directions = document.querySelector<HTMLDivElement>("#statusPanel")!;
+directions.innerHTML = "No points yet...";
 
 const cacheCoins = new Map<string, number>();
 
-function spawnCache(i: number, j: number) {
+function createCache(i: number, j: number) {
   const origin = OAKES_CLASSROOM;
   const bounds = leaflet.latLngBounds([
     [origin.lat + i * TILE_DEGREES, origin.lng + j * TILE_DEGREES],
@@ -73,7 +73,7 @@ function spawnCache(i: number, j: number) {
           cacheCoins.set(cacheKey, coins);
           popupDiv.querySelector<HTMLSpanElement>("#coins")!.innerHTML = coins
             .toString();
-          statusPanel.innerHTML = `${playerPoints} points accumulated`;
+          directions.innerHTML = `${playerPoints} points accumulated`;
         }
       },
     );
@@ -87,7 +87,7 @@ function spawnCache(i: number, j: number) {
           cacheCoins.set(cacheKey, coins);
           popupDiv.querySelector<HTMLSpanElement>("#coins")!.innerHTML = coins
             .toString();
-          statusPanel.innerHTML = `${playerPoints} points accumulated`;
+          directions.innerHTML = `${playerPoints} points accumulated`;
         }
       },
     );
@@ -99,7 +99,7 @@ function spawnCache(i: number, j: number) {
 for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
   for (let j = -NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
     if (luck([i, j].toString()) < CACHE_SPAWN_PROBABILITY) {
-      spawnCache(i, j);
+      createCache(i, j);
     }
   }
 }
