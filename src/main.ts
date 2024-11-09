@@ -9,7 +9,6 @@ img.src = import.meta.resolve("../marker.png");
 document.body.appendChild(img);
 
 const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
-
 const GAMEPLAY_ZOOM_LEVEL = 19;
 const TILE_DEGREES = 1e-4;
 const NEIGHBORHOOD_SIZE = 8;
@@ -28,7 +27,7 @@ leaflet
   .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution:
-      '&copy; <a hnvref="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   })
   .addTo(map);
 
@@ -37,69 +36,111 @@ playerMarker.bindTooltip("That's you!");
 playerMarker.addTo(map);
 
 let playerPoints = 0;
+const playerInventory: {
+  original: { i: number; j: number };
+  serial: number;
+}[] = [];
 const directions = document.querySelector<HTMLDivElement>("#statusPanel")!;
 directions.innerHTML = "No points yet...";
 
-const cacheCoins = new Map<string, number>();
+const cacheCoins = new Map<
+  string,
+  { original: { i: number; j: number }; serial: number }[]
+>();
 
-function createCache(i: number, j: number) {
-  const origin = OAKES_CLASSROOM;
+function latLngToCell(lat: number, lng: number): { i: number; j: number } {
+  return {
+    i: Math.floor(lat * 1e4),
+    j: Math.floor(lng * 1e4),
+  };
+}
+
+function spawnCache(i: number, j: number) {
   const bounds = leaflet.latLngBounds([
-    [origin.lat + i * TILE_DEGREES, origin.lng + j * TILE_DEGREES],
-    [origin.lat + (i + 1) * TILE_DEGREES, origin.lng + (j + 1) * TILE_DEGREES],
+    [i * TILE_DEGREES, j * TILE_DEGREES],
+    [(i + 1) * TILE_DEGREES, (j + 1) * TILE_DEGREES],
   ]);
-
   const rect = leaflet.rectangle(bounds);
   rect.addTo(map);
-
   rect.bindPopup(() => {
     const cacheKey = `${i},${j}`;
-    let coins = cacheCoins.get(cacheKey) ??
-      Math.floor(luck([i, j, "coins"].toString()) * 10);
-    cacheCoins.set(cacheKey, coins);
-
+    const coins = cacheCoins.get(cacheKey) ?? [];
+    if (coins.length === 0) {
+      const initialCoins = Math.floor(luck([i, j, "coins"].toString()) * 10);
+      for (let serial = 0; serial < initialCoins; serial++) {
+        coins.push({ original: { i, j }, serial });
+      }
+      cacheCoins.set(cacheKey, coins);
+    }
     const popupDiv = document.createElement("div");
-    popupDiv.innerHTML = `
-      <div>There is a cache here at "${i},${j}". It has <span id="coins">${coins}</span> coins.</div>
-      <button id="collect">Collect</button>
-      <button id="deposit">Deposit</button>`;
+    const list = document.createElement("ul");
+    coins.forEach((coin, index) => {
+      const listItem = document.createElement("li");
+      listItem.innerHTML =
+        `${coin.original.i}:${coin.original.j}#${coin.serial}`;
+      const collectButton = document.createElement("button");
+      collectButton.innerHTML = "collect";
+      collectButton.addEventListener("click", () => {
+        coins.splice(index, 1);
+        playerPoints++;
+        playerInventory.push(coin); // Add to player's inventory
+        cacheCoins.set(cacheKey, coins);
+        updatePopup();
+      });
+      listItem.appendChild(collectButton);
+      list.appendChild(listItem);
+    });
+    popupDiv.innerHTML = `Cache ${cacheKey}`;
+    popupDiv.appendChild(list);
 
-    popupDiv.querySelector<HTMLButtonElement>("#collect")!.addEventListener(
-      "click",
-      () => {
-        if (coins > 0) {
-          coins--;
+    const depositButton = document.createElement("button");
+    depositButton.innerHTML = "deposit";
+    depositButton.addEventListener("click", () => {
+      if (playerPoints > 0 && playerInventory.length > 0) {
+        const coin = playerInventory.pop()!; // Retrieve last collected coin
+        coins.push(coin);
+        playerPoints--;
+        cacheCoins.set(cacheKey, coins);
+        updatePopup();
+      }
+    });
+    popupDiv.appendChild(depositButton);
+
+    const updatePopup = () => {
+      directions.innerHTML = `${playerPoints} points accumulated.`;
+      list.innerHTML = "";
+      coins.forEach((coin) => {
+        const listItem = document.createElement("li");
+        listItem.innerHTML =
+          `${coin.original.i}:${coin.original.j}#${coin.serial}`;
+        const collectButton = document.createElement("button");
+        collectButton.innerHTML = "collect";
+        collectButton.addEventListener("click", () => {
+          coins.splice(coins.indexOf(coin), 1);
           playerPoints++;
+          playerInventory.push(coin);
           cacheCoins.set(cacheKey, coins);
-          popupDiv.querySelector<HTMLSpanElement>("#coins")!.innerHTML = coins
-            .toString();
-          directions.innerHTML = `${playerPoints} points accumulated`;
-        }
-      },
-    );
-
-    popupDiv.querySelector<HTMLButtonElement>("#deposit")!.addEventListener(
-      "click",
-      () => {
-        if (playerPoints > 0) {
-          coins++;
-          playerPoints--;
-          cacheCoins.set(cacheKey, coins);
-          popupDiv.querySelector<HTMLSpanElement>("#coins")!.innerHTML = coins
-            .toString();
-          directions.innerHTML = `${playerPoints} points accumulated`;
-        }
-      },
-    );
+          updatePopup();
+        });
+        listItem.appendChild(collectButton);
+        list.appendChild(listItem);
+      });
+    };
 
     return popupDiv;
   });
 }
 
-for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
-  for (let j = -NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
-    if (luck([i, j].toString()) < CACHE_SPAWN_PROBABILITY) {
-      createCache(i, j);
+const { i: playerI, j: playerJ } = latLngToCell(
+  OAKES_CLASSROOM.lat,
+  OAKES_CLASSROOM.lng,
+);
+for (let di = -NEIGHBORHOOD_SIZE; di <= NEIGHBORHOOD_SIZE; di++) {
+  for (let dj = -NEIGHBORHOOD_SIZE; dj <= NEIGHBORHOOD_SIZE; dj++) {
+    const cellI = playerI + di;
+    const cellJ = playerJ + dj;
+    if (luck([cellI, cellJ].toString()) < CACHE_SPAWN_PROBABILITY) {
+      spawnCache(cellI, cellJ);
     }
   }
 }
