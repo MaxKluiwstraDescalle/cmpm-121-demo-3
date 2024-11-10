@@ -144,3 +144,88 @@ for (let di = -NEIGHBORHOOD_SIZE; di <= NEIGHBORHOOD_SIZE; di++) {
     }
   }
 }
+
+// Ensure move buttons are correctly initialized
+const moveButtons = {
+  north: document.getElementById("north"),
+  south: document.getElementById("south"),
+  west: document.getElementById("west"),
+  east: document.getElementById("east"),
+  reset: document.getElementById("reset"),
+};
+
+// Check if all move buttons are correctly initialized
+if (
+  moveButtons.north && moveButtons.south && moveButtons.west &&
+  moveButtons.east && moveButtons.reset
+) {
+  moveButtons.north.addEventListener("click", () => movePlayer(1, 0)); // Move north
+  moveButtons.south.addEventListener("click", () => movePlayer(-1, 0)); // Move south
+  moveButtons.west.addEventListener("click", () => movePlayer(0, -1)); // Move west
+  moveButtons.east.addEventListener("click", () => movePlayer(0, 1)); // Move east
+  moveButtons.reset.addEventListener("click", () => resetPlayer()); // Reset position
+} else {
+  console.error("One or more move buttons are not found in the DOM.");
+}
+
+// Function to move the player
+function movePlayer(deltaI: number, deltaJ: number) {
+  const newLatLng = leaflet.latLng(
+    playerMarker.getLatLng().lat + deltaI * TILE_DEGREES,
+    playerMarker.getLatLng().lng + deltaJ * TILE_DEGREES,
+  );
+
+  map.setView(newLatLng);
+  playerMarker.setLatLng(newLatLng);
+
+  const { i: newI, j: newJ } = latLngToCell(newLatLng.lat, newLatLng.lng);
+  for (let di = -NEIGHBORHOOD_SIZE; di <= NEIGHBORHOOD_SIZE; di++) {
+    for (let dj = -NEIGHBORHOOD_SIZE; dj <= NEIGHBORHOOD_SIZE; dj++) {
+      const cellI = newI + di;
+      const cellJ = newJ + dj;
+      if (luck([cellI, cellJ].toString()) < CACHE_SPAWN_PROBABILITY) {
+        spawnCache(cellI, cellJ);
+      }
+    }
+  }
+}
+
+// Function to reset the player to the initial location
+function resetPlayer() {
+  const initialLatLng = OAKES_CLASSROOM;
+  map.setView(initialLatLng);
+  playerMarker.setLatLng(initialLatLng);
+}
+
+// Memento pattern to save and restore cache state
+class CacheMemento {
+  constructor(
+    public state: Map<
+      string,
+      { original: { i: number; j: number }; serial: number }[]
+    >,
+  ) {}
+}
+
+class CacheCaretaker {
+  private mementos: CacheMemento[] = [];
+
+  save(
+    state: Map<
+      string,
+      { original: { i: number; j: number }; serial: number }[]
+    >,
+  ) {
+    this.mementos.push(new CacheMemento(new Map(state)));
+  }
+
+  restore():
+    | Map<string, { original: { i: number; j: number }; serial: number }[]>
+    | undefined {
+    const memento = this.mementos.pop();
+    return memento ? new Map(memento.state) : undefined;
+  }
+}
+
+const cacheCaretaker = new CacheCaretaker();
+cacheCaretaker.save(cacheCoins);
