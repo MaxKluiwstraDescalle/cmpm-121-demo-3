@@ -4,6 +4,15 @@ import "./style.css";
 import "./leafletWorkaround.ts";
 import luck from "./luck.ts";
 
+// Define a custom icon for the star emoji
+const starIcon = leaflet.divIcon({
+  html: "⭐", // Star emoji
+  className: "custom-star-icon", // Custom class for styling
+  iconSize: [25, 25], // Adjust the size as needed
+  iconAnchor: [12, 12], // Adjust the anchor point as needed
+  popupAnchor: [0, -12], // Adjust the popup anchor point as needed
+});
+
 const img = document.createElement("img");
 img.src = import.meta.resolve("../marker.png");
 document.body.appendChild(img);
@@ -48,6 +57,9 @@ const cacheCoins = new Map<
   { original: { i: number; j: number }; serial: number }[]
 >();
 
+const playerPath: leaflet.LatLng[] = [OAKES_CLASSROOM];
+const polyline = leaflet.polyline(playerPath, { color: "blue" }).addTo(map);
+
 function latLngToCell(lat: number, lng: number): { i: number; j: number } {
   return {
     i: Math.floor(lat * 1e4),
@@ -55,14 +67,12 @@ function latLngToCell(lat: number, lng: number): { i: number; j: number } {
   };
 }
 
+// Update the spawnCache function to use the star emoji icon
 function spawnCache(i: number, j: number) {
-  const bounds = leaflet.latLngBounds([
-    [i * TILE_DEGREES, j * TILE_DEGREES],
-    [(i + 1) * TILE_DEGREES, (j + 1) * TILE_DEGREES],
-  ]);
-  const rect = leaflet.rectangle(bounds);
-  rect.addTo(map);
-  rect.bindPopup(() => {
+  const marker = leaflet.marker([i * TILE_DEGREES, j * TILE_DEGREES], {
+    icon: starIcon,
+  }).addTo(map);
+  marker.bindPopup(() => {
     const cacheKey = `${i},${j}`;
     const coins = cacheCoins.get(cacheKey) ?? [];
     if (coins.length === 0) {
@@ -152,18 +162,20 @@ const moveButtons = {
   west: document.getElementById("west"),
   east: document.getElementById("east"),
   reset: document.getElementById("reset"),
+  sensor: document.getElementById("sensor"),
 };
 
 // Check if all move buttons are correctly initialized
 if (
   moveButtons.north && moveButtons.south && moveButtons.west &&
-  moveButtons.east && moveButtons.reset
+  moveButtons.east && moveButtons.reset && moveButtons.sensor
 ) {
   moveButtons.north.addEventListener("click", () => movePlayer(1, 0)); // Move north
   moveButtons.south.addEventListener("click", () => movePlayer(-1, 0)); // Move south
   moveButtons.west.addEventListener("click", () => movePlayer(0, -1)); // Move west
   moveButtons.east.addEventListener("click", () => movePlayer(0, 1)); // Move east
   moveButtons.reset.addEventListener("click", () => resetPlayer()); // Reset position
+  moveButtons.sensor.addEventListener("click", () => toggleGeolocation()); // Toggle geolocation
 } else {
   console.error("One or more move buttons are not found in the DOM.");
 }
@@ -177,6 +189,8 @@ function movePlayer(deltaI: number, deltaJ: number) {
 
   map.setView(newLatLng);
   playerMarker.setLatLng(newLatLng);
+  playerPath.push(newLatLng);
+  polyline.setLatLngs(playerPath);
 
   const { i: newI, j: newJ } = latLngToCell(newLatLng.lat, newLatLng.lng);
   for (let di = -NEIGHBORHOOD_SIZE; di <= NEIGHBORHOOD_SIZE; di++) {
@@ -192,9 +206,50 @@ function movePlayer(deltaI: number, deltaJ: number) {
 
 // Function to reset the player to the initial location
 function resetPlayer() {
-  const initialLatLng = OAKES_CLASSROOM;
-  map.setView(initialLatLng);
-  playerMarker.setLatLng(initialLatLng);
+  const confirmation = prompt(
+    "Are you sure you want to erase your game state? Type 'yes' to confirm.",
+  );
+  if (confirmation === "yes") {
+    const initialLatLng = OAKES_CLASSROOM;
+    map.setView(initialLatLng);
+    playerMarker.setLatLng(initialLatLng);
+    playerPath.length = 0;
+    playerPath.push(initialLatLng);
+    polyline.setLatLngs(playerPath);
+    playerPoints = 0;
+    playerInventory.length = 0;
+    cacheCoins.clear();
+    directions.innerHTML = "No points yet...";
+    localStorage.clear();
+  }
+}
+
+// Function to toggle geolocation
+let geolocationWatchId: number | null = null;
+function toggleGeolocation() {
+  if (geolocationWatchId !== null) {
+    navigator.geolocation.clearWatch(geolocationWatchId);
+    geolocationWatchId = null;
+  } else {
+    geolocationWatchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const newLatLng = leaflet.latLng(latitude, longitude);
+        map.setView(newLatLng);
+        playerMarker.setLatLng(newLatLng);
+        playerPath.push(newLatLng);
+        polyline.setLatLngs(playerPath);
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 5000,
+      },
+    );
+  }
 }
 
 // Memento pattern to save and restore cache state
@@ -229,3 +284,46 @@ class CacheCaretaker {
 
 const cacheCaretaker = new CacheCaretaker();
 cacheCaretaker.save(cacheCoins);
+
+// Save state to local storage
+globalThis.addEventListener("beforeunload", () => {
+  localStorage.setItem("playerPoints", JSON.stringify(playerPoints));
+  localStorage.setItem("playerInventory", JSON.stringify(playerInventory));
+  localStorage.setItem(
+    "cacheCoins",
+    JSON.stringify(Array.from(cacheCoins.entries())),
+  );
+  localStorage.setItem("playerPath", JSON.stringify(playerPath));
+});
+
+// Load state from local storage
+globalThis.addEventListener("load", () => {
+  const savedPlayerPoints = localStorage.getItem("playerPoints");
+  const savedPlayerInventory = localStorage.getItem("playerInventory");
+  const savedCacheCoins = localStorage.getItem("cacheCoins");
+  const savedPlayerPath = localStorage.getItem("playerPath");
+
+  if (savedPlayerPoints) {
+    playerPoints = JSON.parse(savedPlayerPoints);
+  }
+  if (savedPlayerInventory) {
+    playerInventory.push(...JSON.parse(savedPlayerInventory));
+  }
+  if (savedCacheCoins) {
+    const entries = JSON.parse(savedCacheCoins);
+    entries.forEach(
+      (
+        [key, value]: [
+          string,
+          { original: { i: number; j: number }; serial: number }[],
+        ],
+      ) => {
+        cacheCoins.set(key, value);
+      },
+    );
+  }
+  if (savedPlayerPath) {
+    playerPath.push(...JSON.parse(savedPlayerPath));
+    polyline.setLatLngs(playerPath);
+  }
+});
