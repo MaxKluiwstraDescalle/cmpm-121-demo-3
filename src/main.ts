@@ -88,59 +88,18 @@ function initializeCoins(i: number, j: number) {
   return coins;
 }
 
-// Function to create a popup for a cache
-function createCachePopup(
-  i: number,
-  j: number,
-  coins: { original: { i: number; j: number }; serial: number }[],
-) {
-  const cacheKey = `${i},${j}`;
-  const popupDiv = document.createElement("div");
-  const list = document.createElement("ul");
+// PopupManager class to handle popup logic
+class PopupManager {
+  constructor(
+    private cacheKey: string,
+    private coins: { original: { i: number; j: number }; serial: number }[],
+  ) {}
 
-  coins.forEach((coin, index) => {
-    const listItem = document.createElement("li");
-    listItem.innerHTML = `${coin.original.i}:${coin.original.j}#${coin.serial}`;
-    listItem.addEventListener("click", () => {
-      const homeLatLng = leaflet.latLng(
-        coin.original.i * TILE_DEGREES,
-        coin.original.j * TILE_DEGREES,
-      );
-      map.setView(homeLatLng, GAMEPLAY_ZOOM_LEVEL);
-    });
-    const collectButton = document.createElement("button");
-    collectButton.innerHTML = "collect";
-    collectButton.addEventListener("click", () => {
-      coins.splice(index, 1);
-      playerPoints++;
-      playerInventory.push(coin); // Add to player's inventory
-      cacheCoins.set(cacheKey, coins);
-      updatePopup();
-    });
-    listItem.appendChild(collectButton);
-    list.appendChild(listItem);
-  });
+  createPopup() {
+    const popupDiv = document.createElement("div");
+    const list = document.createElement("ul");
 
-  popupDiv.innerHTML = `Cache ${cacheKey}`;
-  popupDiv.appendChild(list);
-
-  const depositButton = document.createElement("button");
-  depositButton.innerHTML = "deposit";
-  depositButton.addEventListener("click", () => {
-    if (playerPoints > 0 && playerInventory.length > 0) {
-      const coin = playerInventory.pop()!; // Retrieve last collected coin
-      coins.push(coin);
-      playerPoints--;
-      cacheCoins.set(cacheKey, coins);
-      updatePopup();
-    }
-  });
-  popupDiv.appendChild(depositButton);
-
-  const updatePopup = () => {
-    directions.innerHTML = `${playerPoints} points accumulated.`;
-    list.innerHTML = "";
-    coins.forEach((coin) => {
+    this.coins.forEach((coin, index) => {
       const listItem = document.createElement("li");
       listItem.innerHTML =
         `${coin.original.i}:${coin.original.j}#${coin.serial}`;
@@ -154,25 +113,70 @@ function createCachePopup(
       const collectButton = document.createElement("button");
       collectButton.innerHTML = "collect";
       collectButton.addEventListener("click", () => {
-        coins.splice(coins.indexOf(coin), 1);
+        this.coins.splice(index, 1);
         playerPoints++;
-        playerInventory.push(coin);
-        cacheCoins.set(cacheKey, coins);
-        updatePopup();
+        playerInventory.push(coin); // Add to player's inventory
+        cacheCoins.set(this.cacheKey, this.coins);
+        this.updatePopup(popupDiv, list);
       });
       listItem.appendChild(collectButton);
       list.appendChild(listItem);
     });
-  };
 
-  return popupDiv;
+    popupDiv.innerHTML = `Cache ${this.cacheKey}`;
+    popupDiv.appendChild(list);
+
+    const depositButton = document.createElement("button");
+    depositButton.innerHTML = "deposit";
+    depositButton.addEventListener("click", () => {
+      if (playerPoints > 0 && playerInventory.length > 0) {
+        const coin = playerInventory.pop()!; // Retrieve last collected coin
+        this.coins.push(coin);
+        playerPoints--;
+        cacheCoins.set(this.cacheKey, this.coins);
+        this.updatePopup(popupDiv, list);
+      }
+    });
+    popupDiv.appendChild(depositButton);
+
+    return popupDiv;
+  }
+
+  updatePopup(popupDiv: HTMLDivElement, list: HTMLUListElement) {
+    directions.innerHTML = `${playerPoints} points accumulated.`;
+    list.innerHTML = "";
+    this.coins.forEach((coin, index) => {
+      const listItem = document.createElement("li");
+      listItem.innerHTML =
+        `${coin.original.i}:${coin.original.j}#${coin.serial}`;
+      listItem.addEventListener("click", () => {
+        const homeLatLng = leaflet.latLng(
+          coin.original.i * TILE_DEGREES,
+          coin.original.j * TILE_DEGREES,
+        );
+        map.setView(homeLatLng, GAMEPLAY_ZOOM_LEVEL);
+      });
+      const collectButton = document.createElement("button");
+      collectButton.innerHTML = "collect";
+      collectButton.addEventListener("click", () => {
+        this.coins.splice(index, 1);
+        playerPoints++;
+        playerInventory.push(coin);
+        cacheCoins.set(this.cacheKey, this.coins);
+        this.updatePopup(popupDiv, list);
+      });
+      listItem.appendChild(collectButton);
+      list.appendChild(listItem);
+    });
+  }
 }
 
 // Function to spawn a cache
 function spawnCache(i: number, j: number) {
   const marker = createCacheMarker(i, j);
   const coins = initializeCoins(i, j);
-  const popupDiv = createCachePopup(i, j, coins);
+  const popupManager = new PopupManager(`${i},${j}`, coins);
+  const popupDiv = popupManager.createPopup();
   marker.bindPopup(popupDiv);
 }
 
